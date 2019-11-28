@@ -1,0 +1,50 @@
+#!/usr/bin/env escript
+
+main([]) -> usage();
+
+main(AddressesStr) ->
+    code:add_pathz("lib"),
+
+    DCs = lists:foldl(fun(AddressStr, AccPairs) -> 
+                                [HostStr, PortStr] = string:tokens(AddressStr, ":"),
+                                AccPairs ++ [{HostStr, list_to_integer(PortStr)}]
+                        end, [], AddressesStr),
+
+
+    io:format("Connecting DCs: ~p~n", [DCs]),
+
+
+    Descriptors = lists:foldl(fun({Host, Port}, Descriptors) ->
+        {ok, Pid} = antidotec_pb_socket:start(Host, Port),
+        {ok, Descriptor} = antidotec_pb_management:get_connection_descriptor(Pid),
+        _ = antidotec_pb_socket:stop(Pid),
+        Descriptors ++ [Descriptor]
+                              end, [], DCs),
+
+    io:format("Got descriptors: ~p~n", [Descriptors]),
+
+    lists:foreach(fun({Host, Port}) -> 
+        {ok, Pid} = antidotec_pb_socket:start(Host, Port),
+        Response = antidotec_pb_management:connect_to_dcs(Pid, Descriptors),
+        io:format("Connected ~p:~p : ~p~n", [Host, Port, Response]),
+        _ = antidotec_pb_socket:stop(Pid)
+                  end, DCs),
+
+    io:format("Connected all DCs~n");
+
+main(Args) ->
+    io:format("Input: ~p~n", [Args]),
+    usage().
+
+
+usage() ->
+    io:format("NAME~n"),
+    io:format("    connect - connect multiple data centers together via the protocol buffer API~n~n"),
+    io:format("SYNOPSIS~n"),
+    io:format("    connect DC DC [DC...]~n~n"),
+    io:format("DESCRIPTION~n"),
+    io:format("    Connects all DCs~n~n"),
+    io:format("    DC: address and port of a dc as IP:PORT~n~n"),
+    io:format("EXAMPLES~n"),
+    io:format("    connect localhost:8201 localhost:8101~n"),
+    io:format("        Connect both data centers running on (protocol buffer) port 8201 and 8101~n").
